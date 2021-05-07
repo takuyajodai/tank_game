@@ -2,11 +2,8 @@
 import processing.net.*;
 Server server;
 
-//プレイヤー1の情報(サーバ)
-float p1x, p1y, p1r, p1ang;
 //プレイヤー2の情報(クライアント)
-float p2x, p2y, p2r, p2ang;
-
+float c_mouseX, c_mouseY;
 
 //クライアント側の入力
 int c_keyCode;
@@ -20,6 +17,9 @@ int scene;
 
 //玉の格納
 ArrayList<Ball> ball;
+
+//ボールの状態をクライアントに送る用(消されたときのArrayの添字を持つ
+String msg_ball = ""; 
 
 
 //Ballクラス
@@ -93,8 +93,7 @@ class KeyState {
 
 class Player {
   float x,y,r,ang;
-  boolean s_delete = true;
-  boolean c_delete = true;
+  boolean delete = true;
   int hp = 10;
   int hpMax = 10;
   
@@ -106,9 +105,9 @@ class Player {
   }
   
   void show_s() {
-    if(s_delete) {
+    if(delete) {
       if(hp < 1) {
-        s_delete = false;
+        delete = false;
       }
       //サーバプレイヤーの外枠
       stroke(50, 50, 50);
@@ -146,9 +145,9 @@ class Player {
   }
   
   void show_c() {
-    if(c_delete) {
+    if(delete) {
       if(hp < 1) {
-        c_delete = false;
+        delete = false;
       }
       //クライアントプレイヤーの外枠
       stroke(0, 80, 50);
@@ -170,7 +169,7 @@ class Player {
   
         
       //照準の回転(クライアント)
-      //p2ang = atan2(c_mouseY - y, c_mouseX - x);
+      ang = atan2(c_mouseY - y, c_mouseX - x);
       //始点
       translate(x, y);
       rotate(ang);
@@ -298,7 +297,13 @@ void game() {
   
   
   
-  
+  //消される予定の玉を全て事前書き出し
+  for (int i=0; i < ball.size(); i++) {
+    if(ball.get(i).delete) {
+      msg_ball = msg_ball + i + " ";
+    }
+    
+  }
   
  
   
@@ -306,15 +311,17 @@ void game() {
   for (int i=0; i < ball.size(); i++) {
     ball.get(i).move();
     if(ball.get(i).delete) {
+      msg_ball = msg_ball + i + " ";
       ball.remove(i);
     }
     
   }
+  sendAllData();
   
   
   
   
-}
+}//game()
 
 void init() {
 }
@@ -340,4 +347,32 @@ void keyReleased() {
 //マウスをリリース時に玉を発射
 void mouseReleased() {
   ball.add(new Ball(s_player.x, s_player.y, degrees(s_player.ang), 5, 0));
+}
+
+//現在の状況をすべてのクライアントに送信
+
+void sendAllData(){
+  //サーバに送信するメッセージを作成
+  //空白で区切り末尾は改行
+  String msg_player = 
+    s_player.x + " " +
+    s_player.y + " " +
+    s_player.r + " " +
+    s_player.ang + " " +
+    s_player.delete + " " +
+    s_player.hp + " " +
+    s_player.hpMax + " " +
+    c_player.x + " " +
+    c_player.y + " " +
+    c_player.r + " " +
+    c_player.ang + " " +
+    c_player.delete + " " +
+    c_player.hp + " " +
+    c_player.hpMax + " ";
+  
+  String msg = msg_player + msg_ball + scene + " " + '\n';
+  print("server: " + msg);
+  //サーバが接続しているすべてのクライアントに送信
+  //(複数のクライアントが接続している場合は全てのクライアントに送信)
+  //server.write(msg);
 }
