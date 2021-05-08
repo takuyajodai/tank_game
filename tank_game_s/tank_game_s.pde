@@ -2,12 +2,12 @@
 import processing.net.*;
 Server server;
 
+
+
+
 //プレイヤー2の情報(クライアント)
 float c_mouseX, c_mouseY;
 
-//クライアント側の入力
-int c_keyCode;
-boolean keyBool;
 
 //ポート番号を指定
 int port = 20000;
@@ -16,10 +16,12 @@ int port = 20000;
 int scene;
 
 //玉の格納
-ArrayList<Ball> ball;
+ArrayList<Ball> ball_s;
+ArrayList<Ball> ball_c;
 
 //ボールの状態をクライアントに送る用(消されたときのArrayの添字を持つ
-String msg_ball = ""; 
+String msg_ball_s = ""; 
+
 
 
 //Ballクラス
@@ -37,18 +39,26 @@ class Ball {
     this.pattern = pattern;
   }
   
+  String getX() {
+    return Float.toString(this.x);
+  }
+  
+  String getY() {
+    return Float.toString(this.y);
+  }
+  
   void move() {
     x += cos(r)*speed;
     y += sin(r)*speed;
     //サーバであれば
     if (pattern == 0) {
       stroke(50,70,30);
-      strokeWeight(4);
+      strokeWeight(3);
       fill(50, 50, 50);
     } else {
       stroke(20,0,0);
-      strokeWeight(4);
-      fill(20, 0, 0);
+      strokeWeight(3);
+      fill(80, 50, 80);
     }
     ellipse(x, y, 5, 5);
     
@@ -204,8 +214,7 @@ class Player {
 
 //サーバ側のキー入力
 KeyState s_key_state;
-//クライアント側のキー入力
-KeyState c_key_state;
+
 
 //サーバ側のプレイヤー
 Player s_player;
@@ -213,9 +222,6 @@ Player s_player;
 Player c_player;
 
 void setup() {
-  
-  c_keyCode = 0;
-  keyBool = false;
   
   scene = 1;
   
@@ -234,10 +240,10 @@ void setup() {
   //キー入力のインスタンス
   s_key_state = new KeyState();
   s_key_state.initialize();
-  c_key_state = new KeyState();
-  c_key_state.initialize();
+
   //発射する玉をアレイリストでインスタンス
-  ball = new ArrayList<Ball>();
+  ball_s = new ArrayList<Ball>();
+  ball_c = new ArrayList<Ball>();
   
 }
 
@@ -277,42 +283,51 @@ void game() {
   } 
   
   
-  
-  //クライアントのキー状況を反映
-  c_key_state.put(c_keyCode, keyBool);
-  
-  //キー操作で，クライアントのそれぞれのstateのbooleanをとってくる
-  if(c_key_state.get(LEFT)) {
-    c_player.x -= 4;
+  //クライアントからのデータ取得
+  Client c = server.available();
+  if(c != null) {
+    //改行コード('\n')まで読み込む
+    String msg = c.readStringUntil('\n');
+    if (msg != null){
+      //メッセージを空白で分割して配列に格納
+      String[] data = splitTokens(msg);
+      //クライアント側のバー状態
+      c_player.x = float(data[0]);
+      c_player.y = float(data[1]);
+      c_player.ang = float(data[2]);
+      c_mouseX = float(data[3]);
+      c_mouseY = float(data[4]);
+      
+    }
   }
-  if(c_key_state.get(RIGHT)) {
-    c_player.x += 4;
-  }
-  if(c_key_state.get(UP)) {
-    c_player.y -= 4;
-  }
-  if(c_key_state.get(DOWN)) {
-    c_player.y += 4;
-  }  
   
   
+ 
   
   //消される予定の玉を全て事前書き出し
-  for (int i=0; i < ball.size(); i++) {
-    if(ball.get(i).delete) {
-      msg_ball = msg_ball + i + " ";
+  for (int i=0; i < ball_s.size(); i++) {
+    if(ball_s.get(i).delete) {
+      msg_ball_s = msg_ball_s + i + " ";
     }
     
   }
   
  
   
-  //玉の発射
-  for (int i=0; i < ball.size(); i++) {
-    ball.get(i).move();
-    if(ball.get(i).delete) {
-      msg_ball = msg_ball + i + " ";
-      ball.remove(i);
+  //玉の発射(サーバ)
+  for (int i=0; i < ball_s.size(); i++) {
+    ball_s.get(i).move();
+    if(ball_s.get(i).delete) {
+      ball_s.remove(i);
+    }
+    
+  }
+  
+  //玉の発射(クライアント)
+  for (int i=0; i < ball_c.size(); i++) {
+    ball_c.get(i).move();
+    if(ball_c.get(i).delete) {
+      ball_c.remove(i);
     }
     
   }
@@ -344,9 +359,10 @@ void keyReleased() {
   if(key == 's') s_key_state.put(DOWN, false);
 }
 
-//マウスをリリース時に玉を発射
+//マウスをリリース時に玉を発射(デモでは同一機によるものであるため，同時発射は仕方がない)
 void mouseReleased() {
-  ball.add(new Ball(s_player.x, s_player.y, degrees(s_player.ang), 5, 0));
+  ball_s.add(new Ball(s_player.x, s_player.y, degrees(s_player.ang), 5, 0));
+  //ball_c.add(new Ball(c_player.x, c_player.y, degrees(c_player.ang), 5, 1));
 }
 
 //現在の状況をすべてのクライアントに送信
@@ -368,11 +384,18 @@ void sendAllData(){
     c_player.ang + " " +
     c_player.delete + " " +
     c_player.hp + " " +
-    c_player.hpMax + " ";
+    c_player.hpMax + " " +
+    scene + " ";
   
-  String msg = msg_player + msg_ball + scene + " " + '\n';
+  /*
+  for(Ball ball_s : ball_s) {
+    msg_ball_s = ball_s.getX() + " " + ball_s.getY() + " ";
+  }
+  */
+    
+  String msg = msg_player + '\n';
   print("server: " + msg);
   //サーバが接続しているすべてのクライアントに送信
   //(複数のクライアントが接続している場合は全てのクライアントに送信)
-  //server.write(msg);
+  server.write(msg);
 }

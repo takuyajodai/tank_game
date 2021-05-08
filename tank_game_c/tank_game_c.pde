@@ -2,19 +2,11 @@
 import processing.net.*;
 Client client;
 
+
 //プレイヤー2の情報(クライアント)
 float c_mouseX, c_mouseY;
 
-//クライアント側の入力(キーの同時入力のため仕方がない)
-int c_keyCodeR;
-int c_keyCodeL;
-int c_keyCodeU;
-int c_keyCodeD;
 
-boolean keyBoolR;
-boolean keyBoolL;
-boolean keyBoolU;
-boolean keyBoolD;
 
 //ポート番号を指定
 int port = 20000;
@@ -24,6 +16,7 @@ float spx =width*0.2, spy = height*0.5, spr = 15, spa = 0, cpx = width*0.8, cpy 
 boolean spd = true, cpd = true;
 int sph = 10, sphm = 10, cph = 10, cphm = 10;
 
+
 //ゲームの状態遷移(0=タイトル, 1=ゲーム, 2=クリア)
 int scene;
 
@@ -32,11 +25,80 @@ int scene;
 String serverAdder = "127.0.0.1";
 
 //玉の格納
-//ArrayList<Ball> ball;
+ArrayList<Ball> ball_s;
+ArrayList<Ball> ball_c;
 
 //ボールの状態をクライアントに送る用(消されたときのArrayの添字を持つ
 String msg_ball = ""; 
 
+
+//Ballクラス
+class Ball {
+  //玉の消滅処理
+  boolean delete = false;
+  float x,y,r,speed;
+  //pattern == 0 サーバ, pattern == 1 クライアント)  
+  int pattern;
+  Ball(float x, float y, float r, float speed, int pattern) {
+    this.x = x;
+    this.y = y;
+    this.r = radians(r);
+    this.speed = speed;
+    this.pattern = pattern;
+  }
+  
+  void move() {
+    x += cos(r)*speed;
+    y += sin(r)*speed;
+    //サーバであれば
+    
+    if (pattern == 0) {
+      stroke(50,70,30);
+      strokeWeight(3);
+      fill(50, 50, 50);
+    } else {
+      stroke(20,0,0);
+      strokeWeight(3);
+      fill(80, 50, 80);
+    }
+    
+    ellipse(x, y, 5, 5);
+    
+    //サーバであれば
+    if(pattern == 0) {
+      if(dist(cpx, cpy, x, y) < cpr + 5) {
+        cph -= 1;
+        delete = true;
+      }
+    } else {
+      if(dist(spx, spy, x, y) < spr + 5) {
+        sph -= 1;
+        delete = true;
+      }
+    }
+  }
+}
+
+//KeyStateクラス
+class KeyState {
+  HashMap<Integer, Boolean> states = new HashMap<Integer, Boolean>();
+  KeyState() {}
+  
+  void initialize() {
+    states.put(LEFT, false);
+    states.put(RIGHT, false);
+    states.put(UP, false);
+    states.put(DOWN, false);
+  }
+  
+  boolean get(int code) {
+    return states.get(code);
+  }
+  
+  void put(int code, boolean state) {
+    states.put(code, state);
+  }
+}//KeyState class
 
 void show_s() {
   if(spd) {
@@ -60,6 +122,7 @@ void show_s() {
     fill(30,50,90);
     rect(-30,-60,60*(float(sph)/float(sphm)),13); 
     translate(-spx, -spy);
+    
 
     //始点
     translate(spx, spy);
@@ -70,6 +133,7 @@ void show_s() {
     
     rotate(-spa);
     translate(-spx, -spy);
+    println("ここまでok");
   }
 }
   
@@ -111,20 +175,12 @@ void show_c() {
 
 }
 
+//クライアント側のキー入力
+KeyState c_key_state;
 
 void setup() {
   //指定されたアドレスとポートでサーバに接続
   client = new Client(this, serverAdder, port);
-  
-  c_keyCodeR = 0;
-  c_keyCodeL = 0;
-  c_keyCodeU = 0;
-  c_keyCodeD = 0;
-  
-  keyBoolR = false;
-  keyBoolL = false;
-  keyBoolU = false;
-  keyBoolD = false;
   
   scene = 1;
   
@@ -132,6 +188,12 @@ void setup() {
   
   colorMode(HSB, 100);
   ellipseMode(RADIUS);  
+  
+  c_key_state = new KeyState();
+  c_key_state.initialize();
+  
+  ball_c = new ArrayList<Ball>();
+  //ball_s = new ArrayList<Ball>();
 }
 
 void draw() {
@@ -147,9 +209,53 @@ void draw() {
 void game() {
   
   background(0,0,90);
-  show_s();
+  
+  
   show_c();
+  show_s();
       
+      
+  //キー操作で，クライアントのそれぞれのstateのbooleanをとってくる
+  if(c_key_state.get(LEFT)) {
+    cpx -= 4;
+  }
+  if(c_key_state.get(RIGHT)) {
+    cpx += 4;
+  }
+  if(c_key_state.get(UP)) {
+    cpy -= 4;
+  }
+  if(c_key_state.get(DOWN)) {
+    cpy += 4;
+  }  
+  
+  String msg = 
+    cpx + " " +
+    cpy + " " +
+    cpa + " " +
+    mouseX + " " +
+    mouseY + " " +
+    sph + " " +
+    "\n";
+  client.write(msg);
+  
+  
+  //玉の発射(クライアント)
+  for (int i=0; i < ball_c.size(); i++) {
+    ball_c.get(i).move();
+    if(ball_c.get(i).delete) {
+      ball_c.remove(i);
+    }
+  }
+  
+  /*
+  for (int j=0; j < ball_s.size(); j++) {
+    ball_s.get(j).move();
+    if(ball_s.get(j).delete) {
+      ball_s.remove(j);
+    } 
+  }
+  */
   
 }//game()
 
@@ -160,34 +266,24 @@ void clear() {
 }
 
 void keyPressed() {
-  if(key == RIGHT) c_keyCodeR = RIGHT; keyBoolR = true;
-  if(key == LEFT) c_keyCodeL = LEFT; keyBoolL = true;
-  if(key == UP) c_keyCodeU = UP; keyBoolU = true;
-  if(key == DOWN) c_keyCodeD = DOWN; keyBoolD = true;
-  String msg = 
-    c_keyCodeR + " " + keyBoolR + " " +
-    c_keyCodeL + " " + keyBoolL + " " +
-    c_keyCodeU + " " + keyBoolU + " " +
-    c_keyCodeD + " " + keyBoolD + " " +
-    "\n";
-    client.write(msg);
-  
+  if(key == 'd') c_key_state.put(RIGHT, true);
+  if(key == 'a') c_key_state.put(LEFT, true);
+  if(key == 'w') c_key_state.put(UP, true);
+  if(key == 's') c_key_state.put(DOWN, true);
 }
 
-
 void keyReleased() {
-  if(key == RIGHT) c_keyCodeR = RIGHT; keyBoolR = false;
-  if(key == LEFT) c_keyCodeR = LEFT; keyBoolL = false;
-  if(key == UP) c_keyCodeR = UP; keyBoolU = false;
-  if(key == DOWN) c_keyCodeR = DOWN; keyBoolD = false;
+  if(key == 'd') c_key_state.put(RIGHT, false); 
+  if(key == 'a') c_key_state.put(LEFT, false);
+  if(key == 'w') c_key_state.put(UP, false);
+  if(key == 's') c_key_state.put(DOWN, false);
+}
+
+void mouseReleased() {
+  ball_c.add(new Ball(cpx, cpy, degrees(cpa), 5, 1));
+  //サーバの情報を追加
+  //ball_s.add(new Ball(ball_x, ball_y, degrees(spr), 5, 0));
   
-  String msg = 
-    c_keyCodeR + " " + keyBoolR + " " +
-    c_keyCodeL + " " + keyBoolL + " " +
-    c_keyCodeU + " " + keyBoolU + " " +
-    c_keyCodeD + " " + keyBoolD + " " +
-    "\n";
-    client.write(msg);
 }
 
 void clientEvent(Client c) {
